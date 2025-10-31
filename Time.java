@@ -12,6 +12,7 @@ import java.awt.event.KeyEvent;
 
 public class Time extends JFrame {
     private JLabel currentTimeLabel;
+    private List<IntervalSection> intervalSections;
     private JPanel intervalsPanel;
     private JLabel resultLabel;
     private static final LocalTime CUTOFF_3PM = LocalTime.of(15, 0); // 3:00 PM
@@ -19,7 +20,6 @@ public class Time extends JFrame {
     private static final LocalTime CUTOFF_7PM = LocalTime.of(19, 0); // 7:00 PM
     private final DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("hh:mm a");
     private final DateTimeFormatter zoneFormatter = DateTimeFormatter.ofPattern("z");
-    private List<IntervalRow> intervalRows;
 
     public Time() {
         // Set up the JFrame
@@ -27,8 +27,8 @@ public class Time extends JFrame {
         setAutoRequestFocus(true);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        // Initialize interval rows list
-        intervalRows = new ArrayList<>();
+        // Initialize interval sections list
+        intervalSections = new ArrayList<>();
 
         // Create a main panel with centered layout
         JPanel mainPanel = new JPanel();
@@ -58,10 +58,10 @@ public class Time extends JFrame {
 
         // Create panel for intervals
         intervalsPanel = new JPanel();
-        intervalsPanel.setLayout(new BoxLayout(intervalsPanel, BoxLayout.Y_AXIS));
-        
-        // Add initial interval row
-        addIntervalRow(1);
+        intervalsPanel.setLayout(new GridBagLayout());
+
+        // Add initial interval section
+        addIntervalSection(1);
 
         // Scroll pane for intervals
         JScrollPane scrollPane = new JScrollPane(intervalsPanel);
@@ -108,156 +108,204 @@ public class Time extends JFrame {
 
         pack();
         setLocationRelativeTo(null); // Center the window
-        setSize(600, 400); // Set a reasonable initial size
+        setSize(500, 400); // Set a reasonable initial size
     }
 
-    private class IntervalRow {
-        private JPanel panel;
-        private JLabel numberLabel;
+    private class IntervalSection {
+        private JLabel label;
         private JTextField textField;
         private JLabel etaLabel;
         private JButton removeButton;
         private int index;
 
-        public IntervalRow(int index) {
+        public IntervalSection(int index) {
             this.index = index;
-            createComponents();
         }
 
-        private void createComponents() {
-            panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-            panel.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
-
-            numberLabel = new JLabel("Interval " + index + ":");
-            textField = new JTextField(10);
-            etaLabel = new JLabel("");
-            removeButton = new JButton("X");
-            removeButton.setMargin(new Insets(1, 4, 1, 4));
-            removeButton.setPreferredSize(new Dimension(30, 25));
-
-            // Add key listener for Tab key to add new row
-            textField.addKeyListener(new KeyAdapter() {
-                @Override
-                public void keyPressed(KeyEvent e) {
-                    if (e.getKeyCode() == KeyEvent.VK_TAB) {
-                        // Check if this is the last row and field has focus
-                        if (isLastRow() && textField.hasFocus()) {
-                            addNewRow();
-                            e.consume(); // Prevent default tab behavior
-                        }
-                    }
-                }
-            });
-
-            // Add action listener for text changes to update ETA
-            textField.addActionListener(e -> updateETA());
-            textField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-                public void changedUpdate(javax.swing.event.DocumentEvent e) { updateETA(); }
-                public void removeUpdate(javax.swing.event.DocumentEvent e) { updateETA(); }
-                public void insertUpdate(javax.swing.event.DocumentEvent e) { updateETA(); }
-            });
-
-            // Add action listener for remove button
-            removeButton.addActionListener(e -> removeRow());
-
-            panel.add(numberLabel);
-            panel.add(textField);
-            panel.add(etaLabel);
-            panel.add(removeButton);
-        }
-
-        private void updateETA() {
-            String input = textField.getText().trim();
-            if (!input.isEmpty()) {
-                try {
-                    int minutesToAdd = parseInput(input);
-                    if (minutesToAdd >= 0) {
-                        LocalTime currentTime = LocalTime.now();
-                        LocalTime eta = currentTime.plusMinutes(minutesToAdd);
-                        etaLabel.setText("ETA: " + eta.format(timeFormatter));
-                    } else {
-                        etaLabel.setText("Invalid input");
-                    }
-                } catch (NumberFormatException ex) {
-                    etaLabel.setText("Invalid input");
-                }
-            } else {
-                etaLabel.setText("");
-            }
-        }
-
-        private int parseInput(String input) {
-            try {
-                int value = Integer.parseInt(input);
-                if (input.length() == 3) {
-                    // Interpret as HMM (hours and minutes, e.g., "130" = 1h30m)
-                    int hours = value / 100;
-                    int minutes = value % 100;
-                    if (hours >= 10 || minutes >= 60) {
-                        return -1;
-                    }
-                    return hours * 60 + minutes;
-                } else if (input.length() <= 2) {
-                    // Interpret as minutes
-                    return value;
-                } else {
-                    return -1;
-                }
-            } catch (NumberFormatException ex) {
-                return -1;
-            }
-        }
-
-        private boolean isLastRow() {
-            return index == intervalRows.size();
-        }
-
-        public JPanel getPanel() { return panel; }
+        public JLabel getLabel() { return label; }
         public JTextField getTextField() { return textField; }
+        public JLabel getEtaLabel() { return etaLabel; }
+        public JButton getRemoveButton() { return removeButton; }
         public int getIndex() { return index; }
         public void setIndex(int index) { 
             this.index = index; 
-            numberLabel.setText("Interval " + index + ":");
+            label.setText("Interval " + index + " (minutes or HMM):");
         }
         public String getText() { return textField.getText(); }
     }
 
-    private void addIntervalRow(int index) {
-        IntervalRow newRow = new IntervalRow(index);
-        intervalRows.add(index - 1, newRow);
-        intervalsPanel.add(newRow.getPanel());
+    private void addIntervalSection(int index) {
+        IntervalSection section = new IntervalSection(index);
+        
+        // Create components
+        section.label = new JLabel("Interval " + index + " (minutes or HMM):");
+        section.textField = new JTextField(10);
+        section.etaLabel = new JLabel("");
+        section.removeButton = new JButton("X");
+        section.removeButton.setMargin(new Insets(1, 4, 1, 4));
+        section.removeButton.setPreferredSize(new Dimension(30, 25));
+
+        // Add key listener for Tab key to add new row
+        section.textField.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_TAB) {
+                    // Check if this is the last section and field has focus
+                    if (isLastSection(section) && section.textField.hasFocus()) {
+                        addNewSection();
+                        e.consume(); // Prevent default tab behavior
+                    }
+                }
+            }
+        });
+
+        // Add action listener for text changes to update ETA
+        section.textField.addActionListener(e -> updateETA(section));
+        section.textField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateETA(section); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateETA(section); }
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateETA(section); }
+        });
+
+        // Add action listener for remove button
+        section.removeButton.addActionListener(e -> removeSection(section));
+
+        // Add to intervals panel using GridBagLayout
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(2, 5, 2, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        // Label
+        gbc.gridx = 0;
+        gbc.gridy = index - 1;
+        gbc.weightx = 0.3;
+        intervalsPanel.add(section.label, gbc);
+
+        // Text field
+        gbc.gridx = 1;
+        gbc.weightx = 0.3;
+        intervalsPanel.add(section.textField, gbc);
+
+        // ETA label
+        gbc.gridx = 2;
+        gbc.weightx = 0.3;
+        intervalsPanel.add(section.etaLabel, gbc);
+
+        // Remove button (only show if not the only section)
+        gbc.gridx = 3;
+        gbc.weightx = 0.1;
+        if (intervalSections.size() > 0) { // Only show remove button if there are existing sections
+            intervalsPanel.add(section.removeButton, gbc);
+        }
+
+        intervalSections.add(index - 1, section);
         revalidateIntervals();
         intervalsPanel.revalidate();
         intervalsPanel.repaint();
         
         // Focus the new field
-        SwingUtilities.invokeLater(() -> newRow.getTextField().requestFocusInWindow());
+        SwingUtilities.invokeLater(() -> section.textField.requestFocusInWindow());
     }
 
-    private void addNewRow() {
-        addIntervalRow(intervalRows.size() + 1);
+    private void updateETA(IntervalSection section) {
+        String input = section.getText().trim();
+        if (!input.isEmpty()) {
+            try {
+                int minutesToAdd = parseInput(input);
+                if (minutesToAdd >= 0) {
+                    LocalTime currentTime = LocalTime.now();
+                    LocalTime eta = currentTime.plusMinutes(minutesToAdd);
+                    section.etaLabel.setText("ETA: " + eta.format(timeFormatter));
+                } else {
+                    section.etaLabel.setText("Invalid input");
+                }
+            } catch (NumberFormatException ex) {
+                section.etaLabel.setText("Invalid input");
+            }
+        } else {
+            section.etaLabel.setText("");
+        }
     }
 
-    private void removeRow() {
-        if (intervalRows.size() > 1) {
-            // Find which row to remove
-            for (int i = 0; i < intervalRows.size(); i++) {
-                IntervalRow row = intervalRows.get(i);
-                if (row.removeButton.getModel().isArmed()) {
-                    intervalsPanel.remove(row.getPanel());
-                    intervalRows.remove(i);
-                    revalidateIntervals();
-                    intervalsPanel.revalidate();
-                    intervalsPanel.repaint();
-                    break;
+    private int parseInput(String input) {
+        try {
+            int value = Integer.parseInt(input);
+            if (input.length() == 3) {
+                // Interpret as HMM (hours and minutes, e.g., "130" = 1h30m)
+                int hours = value / 100;
+                int minutes = value % 100;
+                if (hours >= 10 || minutes >= 60) {
+                    return -1;
+                }
+                return hours * 60 + minutes;
+            } else if (input.length() <= 2) {
+                // Interpret as minutes
+                return value;
+            } else {
+                return -1;
+            }
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
+    }
+
+    private boolean isLastSection(IntervalSection section) {
+        return section.getIndex() == intervalSections.size();
+    }
+
+    private void addNewSection() {
+        addIntervalSection(intervalSections.size() + 1);
+    }
+
+    private void removeSection(IntervalSection sectionToRemove) {
+        if (intervalSections.size() > 1) {
+            // Remove all components from intervals panel
+            intervalsPanel.removeAll();
+            
+            // Remove the section from our list
+            intervalSections.remove(sectionToRemove);
+            
+            // Re-add all remaining sections with updated indices
+            for (int i = 0; i < intervalSections.size(); i++) {
+                IntervalSection section = intervalSections.get(i);
+                section.setIndex(i + 1);
+                
+                GridBagConstraints gbc = new GridBagConstraints();
+                gbc.insets = new Insets(2, 5, 2, 5);
+                gbc.fill = GridBagConstraints.HORIZONTAL;
+
+                // Label
+                gbc.gridx = 0;
+                gbc.gridy = i;
+                gbc.weightx = 0.3;
+                intervalsPanel.add(section.label, gbc);
+
+                // Text field
+                gbc.gridx = 1;
+                gbc.weightx = 0.3;
+                intervalsPanel.add(section.textField, gbc);
+
+                // ETA label
+                gbc.gridx = 2;
+                gbc.weightx = 0.3;
+                intervalsPanel.add(section.etaLabel, gbc);
+
+                // Remove button (only show if not the only section)
+                gbc.gridx = 3;
+                gbc.weightx = 0.1;
+                if (intervalSections.size() > 1) {
+                    intervalsPanel.add(section.removeButton, gbc);
                 }
             }
+            
+            intervalsPanel.revalidate();
+            intervalsPanel.repaint();
         }
     }
 
     private void revalidateIntervals() {
-        for (int i = 0; i < intervalRows.size(); i++) {
-            intervalRows.get(i).setIndex(i + 1);
+        for (int i = 0; i < intervalSections.size(); i++) {
+            intervalSections.get(i).setIndex(i + 1);
         }
     }
 
@@ -267,8 +315,8 @@ public class Time extends JFrame {
         currentTimeLabel.setText("Current Time: " + currentTime.format(timeFormatter) + " " + currentTime.format(zoneFormatter));
         
         // Update all ETA labels
-        for (IntervalRow row : intervalRows) {
-            row.updateETA();
+        for (IntervalSection section : intervalSections) {
+            updateETA(section);
         }
     }
 
@@ -282,13 +330,13 @@ public class Time extends JFrame {
         int[] cutoffIndices = new int[3]; // For 3PM, 5PM, 7PM
         long[] minutesPastCutoffs = new long[3];
 
-        // Process each interval row
-        for (int i = 0; i < intervalRows.size(); i++) {
-            IntervalRow row = intervalRows.get(i);
-            String input = row.getText().trim();
+        // Process each interval section
+        for (int i = 0; i < intervalSections.size(); i++) {
+            IntervalSection section = intervalSections.get(i);
+            String input = section.getText().trim();
             if (!input.isEmpty()) {
                 try {
-                    int minutesToAdd = row.parseInput(input);
+                    int minutesToAdd = parseInput(input);
                     if (minutesToAdd < 0) {
                         resultLabel.setText("Error: Invalid input in Interval " + (i + 1) + ": " + input);
                         return;
