@@ -524,6 +524,7 @@ class GameCache {
         }
     }
     
+    
     private void saveIndices() throws IOException {
         try (RandomAccessFile raf = new RandomAccessFile(indexFile, "rw");
              FileChannel channel = raf.getChannel()) {
@@ -538,4 +539,126 @@ class GameCache {
             for (CacheIndex index : indices.values()) {
                 buffer.putInt(index.indexId);
                 buffer.putInt(index.protocol);
-                buffer.putInt(index.entries.size()
+                buffer.putInt(index.entries.size());
+                
+                for (IndexEntry entry : index.entries.values()) {
+                    buffer.putInt(entry.fileId);
+                    buffer.putLong(entry.dataPosition);
+                    buffer.putInt(entry.dataLength);
+                    buffer.putInt(entry.sector);
+                    buffer.putInt(entry.container);
+                }
+            }
+            
+            buffer.flip();
+            channel.write(buffer);
+            channel.truncate(buffer.limit());
+        }
+    }
+    
+    public void put(int indexId, int fileId, byte[] data, int container) throws IOException {
+        CacheIndex index = indices.computeIfAbsent(indexId, 
+            id -> new CacheIndex(id, this.version));
+        
+        try (RandomAccessFile dataRaf = new RandomAccessFile(dataFile, "rw");
+             FileChannel dataChannel = dataRaf.getChannel()) {
+            
+            // Calculate CRC for data integrity
+            CRC32 crc = new CRC32();
+            crc.update(data);
+            int dataCrc = (int) crc.getValue();
+            
+            // Seek to end for new data
+            long dataPosition = dataFile.length();
+            dataChannel.position(dataPosition);
+            
+            // Write data with header
+            ByteBuffer dataBuffer = ByteBuffer.allocate(data.length + 12);
+            dataBuffer.putInt(data.length);
+            dataBuffer.putInt(dataCrc);
+            dataBuffer.putInt(version);
+            dataBuffer.put(data);
+            dataBuffer.flip();
+            
+            dataChannel.write(dataBuffer);
+            
+            // Update index
+            IndexEntry entry = new IndexEntry();
+            entry.fileId = fileId;
+            entry.dataPosition = dataPosition;
+            entry.dataLength = data.length + 12;
+            entry.sector = (int) (dataPosition / 512);
+            entry.container = container;
+            
+            index.entries.put(fileId, entry);
+        }
+        
+        saveIndices();
+    }
+    
+    public byte[] get(int indexId, int fileId) throws IOException {
+        CacheIndex index = indices.get(indexId);
+        if (index == null) return null;
+        
+        IndexEntry entry = index.entries.get(fileId);
+        if (entry == null) return null;
+        
+        try (RandomAccessFile dataRaf = new RandomAccessFile(dataFile, "r");
+             FileChannel dataChannel = dataRaf.getChannel()) {
+            
+            ByteBuffer buffer = ByteBuffer.allocate(entry.dataLength);
+            dataChannel.position(entry.dataPosition);
+            dataChannel.read(buffer);
+            buffer.flip();
+            
+            // Read and verify header
+            int dataLength = buffer.getInt();
+            int storedCrc = buffer.getInt();
+            int storedVersion = buffer.getInt();
+            
+            if (dataLength != entry.dataLength - 12) {
+                throw new IOException("Data length mismatch for file " + fileId);
+            }
+            
+            byte[] data = new byte[dataLength];
+            buffer.get(data);
+            
+            // Verify CRC
+            CRC32 crc = new CRC32();
+            crc.update(data);
+            int calculatedCrc = (int) crc.getValue();
+            
+            if (storedCrc != calculatedCrc) {
+                throw new IOException("CRC mismatch for file " + fileId);
+            }
+            
+            return data;
+        }
+    }
+    
+    public boolean remove(int indexId, int fileId) throws IOException {
+        CacheIndex index = indices.get(indexId);
+        if (index == null) return false;
+        
+        IndexEntry removed = index.entries.remove(fileId);
+        if (removed != null) {
+            saveIndices();
+            return true;
+        }
+        return false;
+    }
+    
+    public int getFileCount(int indexId) {
+        CacheIndex index = indices.get(indexId);
+        return index != null ? index.entries.size() : 0;
+    }
+    
+    public boolean contains(int indexId, int fileId) {
+        CacheIndex index = indices.get(indexId);
+        return index != null && index.entries.containsKey(fileId);
+    }
+    
+    public Map<Integer, CacheIndex> getIndices() {
+        return Collections.unmodifiableMap(indices);
+    }
+}
