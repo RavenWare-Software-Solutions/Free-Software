@@ -306,39 +306,40 @@ public class GameCacheGUI extends JFrame {
     }
     
     private void importPendingFiles() {
-        int successCount = 0;
-        int totalFiles = pendingFiles.size();
-        
-        for (int i = 0; i < pendingFiles.size(); i++) {
-            File file = pendingFiles.get(i);
-            int archiveId = fileArchiveMapping.get(file);
-            
-            try {
-                byte[] fileData = Files.readAllBytes(file.toPath());
-                gameCache.put(archiveId, i, fileData, 0);
-                log("Imported: " + file.getName() + " to archive " + archiveId + " (ID: " + i + ")");
-                successCount++;
-                
-                // Update progress
-                final int progress = (i + 1) * 100 / totalFiles;
-                SwingUtilities.invokeLater(() -> 
-                    statusLabel.setText("Importing... " + progress + "% (" + (i + 1) + "/" + totalFiles + ")")
-                );
-                
-            } catch (IOException e) {
-                log("Failed to import " + file.getName() + ": " + e.getMessage());
-            }
+    int successCount = 0;
+    int totalFiles = pendingFiles.size();
+
+    for (int i = 0; i < pendingFiles.size(); i++) {
+        File file = pendingFiles.get(i);
+        int archiveId = fileArchiveMapping.get(file);
+        final int currentFileIndex = i; // Create a final copy of i
+
+        try {
+            byte[] fileData = Files.readAllBytes(file.toPath());
+            gameCache.put(archiveId, i, fileData, 0);
+            log("Imported: " + file.getName() + " to archive " + archiveId + " (ID: " + i + ")");
+            successCount++;
+
+            // Update progress
+            final int progress = (currentFileIndex + 1) * 100 / totalFiles;
+            SwingUtilities.invokeLater(() ->
+                statusLabel.setText("Importing... " + progress + "% (" + (currentFileIndex + 1) + "/" + totalFiles + ")")
+            );
+
+        } catch (IOException e) {
+            log("Failed to import " + file.getName() + ": " + e.getMessage());
         }
-        
-        // Clear pending files after import
-        SwingUtilities.invokeLater(() -> {
-            pendingFiles.clear();
-            fileArchiveMapping.clear();
-            tableModel.setRowCount(0);
-        });
-        
-        log("Import completed: " + successCount + "/" + totalFiles + " files successfully imported");
     }
+
+    // Clear pending files after import
+    SwingUtilities.invokeLater(() -> {
+        pendingFiles.clear();
+        fileArchiveMapping.clear();
+        tableModel.setRowCount(0);
+    });
+
+    log("Import completed: " + successCount + "/" + totalFiles + " files successfully imported");
+}
     
     private void updateCacheInfo(JTextArea infoArea) {
         if (gameCache == null) {
@@ -424,7 +425,7 @@ public class GameCacheGUI extends JFrame {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try {
-                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeel());
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             } catch (Exception e) {
                 e.printStackTrace();
             }
