@@ -5,6 +5,7 @@ import javax.swing.*;
 import javax.swing.event.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.net.URI;
 
 public class TimeCalculator extends JFrame {
     private JLabel currentTimeLabel;
@@ -34,11 +35,21 @@ public class TimeCalculator extends JFrame {
     private boolean countdownActive = false;
     private String lastChangeTimeText = "";
 
+    // URLs for the four buttons
+    private static final String URL_CLOCK_IN = "https://wfmprod.ipaper.com/etm/";
+    private static final String URL_UPDATE_PASSWORD = "https://myaccess.ipaper.com/identityiq/login.jsf?prompt=true";
+    private static final String URL_WEATHER = "https://www.accuweather.com/en/us/louisville/40202/hourly-weather-forecast/348428";
+    private static final String URL_IP_HOME = "https://login.microsoftonline.com/ef4cd7d9-cd50-4892-b62e-077d05f7ba11/oauth2/authorize?client%5Fid=00000003%2D0000%2D0ff1%2Dce00%2D000000000000&response%5Fmode=form%5Fpost&response%5Ftype=code%20id%5Ftoken&resource=00000003%2D0000%2D0ff1%2Dce00%2D000000000000&scope=openid&nonce=A569C0C3EEDCC4284668C921BE8623A4D3F8E3C9A232C3F5%2DA64DC7FD2F10CC220FC4C089FA70D4CC50926D05B7E516A8ADA3C46CE4E20255&redirect%5Furi=https%3A%2F%2Fipapercloud%2Esharepoint%2Ecom%2F%5Fforms%2Fdefault%2Easpx&state=OD0w&claims=%7B%22id%5Ftoken%22%3A%7B%22xms%5Fcc%22%3A%7B%22values%22%3A%5B%22CP1%22%5D%7D%7D%7D&wsucxt=1&cobrandid=11bd8083%2D87e0%2D41b5%2Dbb78%2D0bc43c8a8e8a&client%2Drequest%2Did=f06bd6a1%2De0a9%2D0000%2D113d%2D65030363877a";
+
+    // Secret URL
+    private static final String URL_SECRET_GROK = "https://grok.com/c";
+
     public TimeCalculator() {
         setTitle("Time Calculator");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setAutoRequestFocus(true);
 
+        // Main panel with existing content
         JPanel mainPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
@@ -104,18 +115,84 @@ public class TimeCalculator extends JFrame {
         gbc.gridy = 6;
         mainPanel.add(warningLabel, gbc);
 
-        JPanel container = new JPanel(new GridBagLayout());
-        container.add(mainPanel);
-        add(container);
+        // === NEW: Bottom Layout with Visible + Secret Button ===
+        JPanel southPanel = new JPanel(new BorderLayout());
+        southPanel.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
 
-        setPreferredSize(new Dimension(360, 600));
+        // Top: 2x2 visible buttons
+        JPanel buttonPanel = new JPanel(new GridLayout(2, 2, 10, 10));
+        JButton clockInBtn = createLinkButton("Clock In", URL_CLOCK_IN);
+        JButton updatePassBtn = createLinkButton("Update Password", URL_UPDATE_PASSWORD);
+        JButton weatherBtn = createLinkButton("Weather", URL_WEATHER);
+        JButton ipHomeBtn = createLinkButton("IP Home", URL_IP_HOME);
+
+        buttonPanel.add(clockInBtn);
+        buttonPanel.add(updatePassBtn);
+        buttonPanel.add(weatherBtn);
+        buttonPanel.add(ipHomeBtn);
+
+        southPanel.add(buttonPanel, BorderLayout.NORTH);
+
+        // Bottom: Invisible secret button (centered)
+        JPanel secretPanel = new JPanel(new GridBagLayout());
+        JButton secretButton = new JButton();
+        secretButton.setToolTipText("Secret: Open Grok Chat");
+        secretButton.setContentAreaFilled(false);
+        secretButton.setBorderPainted(false);
+        secretButton.setFocusPainted(false);
+        secretButton.setOpaque(false);
+        secretButton.setPreferredSize(new Dimension(0, 0));
+        secretButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        secretButton.addActionListener(e -> {
+            try {
+                Desktop.getDesktop().browse(new URI(URL_SECRET_GROK));
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                    "Could not open Grok: " + ex.getMessage(),
+                    "Secret Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        // Make it clickable in a 100x40 area (invisible but detectable)
+        secretButton.setPreferredSize(new Dimension(100, 40));
+        secretPanel.add(secretButton);
+
+        southPanel.add(secretPanel, BorderLayout.SOUTH);
+
+        // === Layout: Main content in CENTER, buttons in SOUTH ===
+        setLayout(new BorderLayout());
+        add(mainPanel, BorderLayout.CENTER);
+        add(southPanel, BorderLayout.SOUTH);
+
+        setPreferredSize(new Dimension(380, 720));
         pack();
         setLocationRelativeTo(null);
-        setMinimumSize(new Dimension(360, 600)); // Only grow vertically
+        setMinimumSize(new Dimension(380, 720));
 
         SwingUtilities.invokeLater(() -> intervalFields.get(0).requestFocusInWindow());
         calculateResult();
     }
+
+    // Helper to create a button that opens a URL
+    private JButton createLinkButton(String text, String url) {
+        JButton btn = new JButton(text);
+        btn.setToolTipText("Open: " + url);
+        btn.addActionListener(e -> {
+            try {
+                Desktop.getDesktop().browse(new URI(url));
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                    "Could not open browser: " + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        return btn;
+    }
+
+    // === [Rest of your methods unchanged below] ===
+    // ... (startCountdown, stopCountdown, addIntervalRow, etc.)
+    // [All other methods remain exactly the same as in your original code]
 
     private void startCountdown() {
         updateCountdownTarget();
@@ -422,7 +499,6 @@ public class TimeCalculator extends JFrame {
         calculateResult();
     }
 
-    // Helper: Format minutes as "X hr Y min" or "Y min"
     private String formatDuration(long minutes) {
         if (minutes < 60) {
             return minutes + " min";
