@@ -1,0 +1,162 @@
+import com.github.sarxos.webcam.Webcam;
+import com.sun.jna.Native;
+import com.sun.jna.platform.win32.WinNT;
+import com.sun.jna.ptr.IntByReference;
+import com.sun.jna.win32.StdCallLibrary;
+
+import javax.sound.sampled.*;
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
+import java.io.InputStream;
+import java.util.Scanner;
+import java.util.Timer;
+import java.util.TimerTask;
+
+public class SysMonitor extends JFrame {
+
+    private static final long POLL = 10_000L;
+    private TrayIcon tray;
+    private String micApp = "None", camApp = "None";
+    private Timer timer;
+
+    interface Psapi extends StdCallLibrary {
+        Psapi INSTANCE = Native.load("psapi", Psapi.class);
+        boolean EnumProcesses(int[] pids, int cb, IntByReference needed);
+        int GetModuleFileNameExW(WinNT.HANDLE hProcess, WinNT.HANDLE hModule, char[] lpFilename, int nSize);
+    }
+
+    interface Kernel32 extends StdCallLibrary {
+        Kernel32 INSTANCE = Native.load("kernel32", Kernel32.class);
+        WinNT.HANDLE OpenProcess(int access, boolean inherit, int pid);
+        boolean CloseHandle(WinNT.HANDLE h);
+        boolean QueryFullProcessImageNameW(WinNT.HANDLE hProcess, int flags, char[] lpExeName, IntByReference lpdwSize);
+    }
+
+    private String findProcessUsingDevice(String type) {
+        try {
+            Process p = new ProcessBuilder("tasklist", "/fo", "csv").start();
+            Scanner sc = new Scanner(p.getInputStream()).useDelimiter("\n");
+            while (sc.hasNextLine()) {
+                String line = sc.nextLine().toLowerCase();
+                boolean match = line.contains("zoom") || line.contains("teams") || line.contains("discord");
+                if (!match && type.equals("mic") && line.contains("aud")) match = true;
+                if (!match && type.equals("cam") && line.contains("vid")) match = true;
+                if (match) {
+                    String[] parts = line.split("\",\"");
+                    if (parts.length > 0) return parts[0].replace("\"", "").trim();
+                }
+            }
+            p.waitFor();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return "Unknown";
+    }
+
+    private boolean isMicInUse() {
+        try {
+            for (Mixer.Info info : AudioSystem.getMixerInfo()) {
+                Mixer m = AudioSystem.getMixer(info);
+                if (m.isLineSupported(new Line.Info(TargetDataLine.class))) {
+                    AudioFormat fmt = new AudioFormat(44100f, 16, 1, true, false);
+                    TargetDataLine line = (TargetDataLine) m.getLine(new DataLine.Info(TargetDataLine.class, fmt));
+                    line.open(fmt);
+                    line.close();
+                }
+            }
+            return false;
+        } catch (LineUnavailableException e) {
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean isCamInUse() {
+        Webcam w = Webcam.getDefault();
+        if (w == null) return false;
+        try {
+            w.open(false);
+            w.close();
+            return false;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    private Image loadIcon() {
+        try (InputStream is = getClass().getResourceAsStream("/Assets/icon.png")) {
+            if (is != null) {
+                BufferedImage img = javax.imageio.ImageIO.read(is);
+                return img.getScaledInstance(16, 16, Image.SCALE_SMOOTH);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        BufferedImage fallback = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = fallback.createGraphics();
+        g.setColor(Color.GREEN);
+        g.fillRect(0, 0, 16, 16);
+        g.dispose();
+        return fallback;
+    }
+
+    private void updateTray() {
+        boolean mic = isMicInUse(), cam = isCamInUse();
+        micApp = mic ? findProcessUsingDevice("mic") : "None";
+        camApp = cam ? findProcessUsingDevice("cam") : "None";
+        tray.setToolTip("Mic: " + micApp + "\nCam: " + camApp);
+        BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(mic && cam ? Color.RED : mic ? Color.ORANGE : cam ? Color.YELLOW : Color.GREEN);
+        g.fillRect(0, 0, 16, 16);
+        g.dispose();
+        tray.setImage(img);
+        if (mic || cam) tray.displayMessage("Privacy Alert", tray.getToolTip(), TrayIcon.MessageType.WARNING);
+    }
+
+    private void createTray() {
+        if (!SystemTray.isSupported()) return;
+        SystemTray sys = SystemTray.getSystemTray();
+        tray = new TrayIcon(loadIcon(), "Mic/Cam Monitor");
+        tray.setImageAutoSize(true);
+        PopupMenu menu = new PopupMenu();
+        MenuItem exit = new MenuItem("Exit");
+        exit.addActionListener(e -> System.exit(0));
+        menu.add(exit);
+        tray.setPopupMenu(menu);
+        tray.addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent e) {
+                JOptionPane.showMessageDialog(null, "Status:\n" + tray.getToolTip(), "SysMonitor", JOptionPane.INFORMATION_MESSAGE);
+            }
+        });
+        try {
+            sys.add(tray);
+        } catch (AWTException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    public SysMonitor() {
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setTitle("SysMonitor");
+        setSize(300, 200);
+        setVisible(false);
+        createTray();
+        timer = new Timer(true);
+        timer.scheduleAtFixedRate(new TimerTask() {
+            public void run() {
+                SwingUtilities.invokeLater(SysMonitor.this::updateTray);
+            }
+        }, 0, POLL);
+    }
+
+    public static void main(String[] args) {
+        // Pre-load webcams to avoid later delays
+        Webcam.getWebcams();
+        SwingUtilities.invokeLater(SysMonitor::new);
+    }
+}
