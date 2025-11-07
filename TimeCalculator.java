@@ -25,16 +25,16 @@ public class TimeCalculator extends JFrame {
     private static final LocalTime CUTOFF_5PM = LocalTime.of(17, 0);
     private static final LocalTime CUTOFF_7PM = LocalTime.of(19, 0);
     private boolean isPaused = false;
-    private final DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("hh:mm a");
+    private final DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("hh:mm:ss a");
     private final DateTimeFormatter zoneFormatter = DateTimeFormatter.ofPattern("z");
     private int intervalCount = 1;
     private javax.swing.Timer countdownTimer;
     private long initialIntervalMinutes = 0;
     private long displayedIntervalMinutes = 0;
     private LocalTime orderChangeTime = null;
+    private ZonedDateTime orderChangeTimeZoned = null; // NEW: absolute target time
     private boolean countdownActive = false;
     private String lastChangeTimeText = "";
-
     // === URLs ===
     private static final String URL_CLOCK_IN = "https://wfmprod.ipaper.com/etm/";
     private static final String URL_UPDATE_PASSWORD = "https://myaccess.ipaper.com/identityiq/login.jsf?prompt=true";
@@ -48,13 +48,11 @@ public class TimeCalculator extends JFrame {
         setTitle("Time Calculator");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setAutoRequestFocus(true);
-
         /* --------------------------------------------------------------
            TOP FIXED AREA (time, ETA, result, warning)
            -------------------------------------------------------------- */
         JPanel topPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-
         // REDUCED SPACING: 2px top/bottom
         gbc.insets = new Insets(2, 5, 2, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
@@ -65,14 +63,12 @@ public class TimeCalculator extends JFrame {
         gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 3; gbc.anchor = GridBagConstraints.CENTER;
         topPanel.add(currentTimeLabel, gbc);
 
-        // Clock update timer (JDK 8 safe)
-        long secsToNext = 60 - now.getSecond();
-        int delay = (int) (secsToNext * 1000 - now.getNano() / 1_000_000);
-        javax.swing.Timer clockTimer = new javax.swing.Timer(60000, e -> {
+        // Clock update timer — now every SECOND
+        javax.swing.Timer clockTimer = new javax.swing.Timer(1000, e -> {
             updateCurrentTime();
             calculateResult(); // Keep result in sync with clock
         });
-        clockTimer.setInitialDelay(delay);
+        clockTimer.setInitialDelay(1000 - (now.getNano() / 1_000_000));
         clockTimer.start();
 
         countdownTimer = new javax.swing.Timer(1000, e -> updateCountdown());
@@ -94,8 +90,8 @@ public class TimeCalculator extends JFrame {
         gbc.gridy = 3;
         topPanel.add(calcBtn, gbc);
         calcBtn.addActionListener(e -> {
-            calculateResult();     // Always recalc
-            startCountdown();      // Then start countdown
+            calculateResult(); // Always recalc
+            startCountdown(); // Then start countdown
         });
 
         resultLabel = new JLabel("Resulting Time: ");
@@ -112,7 +108,6 @@ public class TimeCalculator extends JFrame {
            -------------------------------------------------------------- */
         intervalsPanel = new JPanel(new GridBagLayout());
         intervalsPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-
         intervalsScrollPane = new JScrollPane(intervalsPanel);
         intervalsScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         intervalsScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
@@ -123,7 +118,6 @@ public class TimeCalculator extends JFrame {
            -------------------------------------------------------------- */
         JPanel southPanel = new JPanel(new BorderLayout());
         southPanel.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
-
         JPanel topButtonPanel = new JPanel(new GridLayout(2, 2, 10, 10));
         topButtonPanel.add(createLinkButton("Clock In", URL_CLOCK_IN));
         topButtonPanel.add(createLinkButton("Update Password", URL_UPDATE_PASSWORD));
@@ -143,9 +137,7 @@ public class TimeCalculator extends JFrame {
         JPanel secretPanel = new JPanel(new GridLayout(1, 2, 10, 0));
         secretPanel.setBorder(BorderFactory.createEmptyBorder(5, 40, 5, 40));
         JButton grokSecretBtn = createSecretButton(URL_SECRET_GROK);
-        
         JButton githubSecretBtn = createSecretButton(URL_SECRET_GITHUB);
-     
         secretPanel.add(grokSecretBtn);
         secretPanel.add(githubSecretBtn);
         southPanel.add(secretPanel, BorderLayout.SOUTH);
@@ -156,7 +148,6 @@ public class TimeCalculator extends JFrame {
         JPanel mainContent = new JPanel(new BorderLayout());
         mainContent.add(topPanel, BorderLayout.NORTH);
         mainContent.add(intervalsScrollPane, BorderLayout.CENTER);
-
         setLayout(new BorderLayout());
         add(mainContent, BorderLayout.CENTER);
         add(southPanel, BorderLayout.SOUTH);
@@ -240,11 +231,9 @@ public class TimeCalculator extends JFrame {
 
         addLiveUpdate(field);
         setupFieldTabToPlus(field);
-
         revalidateControlButtonsPosition();
         intervalsPanel.revalidate();
         intervalsPanel.repaint();
-
         scrollToBottom(intervalsScrollPane);
     }
 
@@ -314,7 +303,7 @@ public class TimeCalculator extends JFrame {
             if (countdownActive && countdownTimer.isRunning()) {
                 stopCountdown();
                 isPaused = true;
-            } else if (isPaused || (orderChangeTime != null && initialIntervalMinutes > 0)) {
+            } else if (isPaused || (orderChangeTimeZoned != null && initialIntervalMinutes > 0)) {
                 startCountdown();
                 isPaused = false;
             }
@@ -347,7 +336,6 @@ public class TimeCalculator extends JFrame {
 
         intervalsPanel.revalidate();
         intervalsPanel.repaint();
-
         scrollToBottom(intervalsScrollPane);
     }
 
@@ -388,7 +376,7 @@ public class TimeCalculator extends JFrame {
         if (countdownTimer.isRunning()) countdownTimer.stop();
         countdownActive = false;
         isPaused = true;
-        updateCountdown();
+        updateCountdown(); // Refresh display
         updateStopButtonState();
         revalidateControlButtonsPosition();
     }
@@ -400,7 +388,7 @@ public class TimeCalculator extends JFrame {
             stopButton.setForeground(Color.RED.darker());
             stopButton.setToolTipText("Stop countdown and edit Interval 1");
             stopButton.setEnabled(true);
-        } else if (isPaused || (orderChangeTime != null && initialIntervalMinutes > 0)) {
+        } else if (isPaused || (orderChangeTimeZoned != null && initialIntervalMinutes > 0)) {
             stopButton.setText("Resume");
             stopButton.setForeground(Color.GREEN.darker());
             stopButton.setToolTipText("Resume countdown from current state");
@@ -422,16 +410,20 @@ public class TimeCalculator extends JFrame {
         if (intervalFields.isEmpty()) {
             initialIntervalMinutes = displayedIntervalMinutes = 0;
             orderChangeTime = null;
+            orderChangeTimeZoned = null;
             etaLabel.setText("Next order change in: --:--");
             return;
         }
+
         String txt = intervalFields.get(0).getText().trim();
         if (txt.isEmpty()) {
             initialIntervalMinutes = displayedIntervalMinutes = 0;
             orderChangeTime = null;
+            orderChangeTimeZoned = null;
             etaLabel.setText("Next order change in: --:--");
             return;
         }
+
         int mins = 0;
         try {
             if (txt.matches("\\d{3}")) {
@@ -445,40 +437,54 @@ public class TimeCalculator extends JFrame {
         } catch (NumberFormatException ex) {
             initialIntervalMinutes = displayedIntervalMinutes = 0;
             orderChangeTime = null;
+            orderChangeTimeZoned = null;
             etaLabel.setText("Next order change in: --:--");
             return;
         }
-        if (!isPaused) initialIntervalMinutes = mins;
-        displayedIntervalMinutes = mins;
-        LocalTime base = LocalTime.now();
-        orderChangeTime = (isPaused && orderChangeTime != null)
-                ? base.plusMinutes(displayedIntervalMinutes)
-                : base.plusMinutes(mins);
+
+        ZonedDateTime now = ZonedDateTime.now();
+
+        // Only set new target if starting fresh
+        if (!isPaused || orderChangeTimeZoned == null) {
+            initialIntervalMinutes = mins;
+            orderChangeTimeZoned = now.plusMinutes(mins);
+        }
+
+        // Update displayed minutes from remaining time
+        long remainingMinutes = Duration.between(now, orderChangeTimeZoned).toMinutes();
+        if (remainingMinutes < 0) remainingMinutes = 0;
+        displayedIntervalMinutes = remainingMinutes;
+
         intervalFields.get(0).setText(String.valueOf(displayedIntervalMinutes));
+        orderChangeTime = orderChangeTimeZoned.toLocalTime(); // For display only
     }
 
     private void updateCountdown() {
-        if (initialIntervalMinutes <= 0 || orderChangeTime == null) {
+        if (initialIntervalMinutes <= 0 || orderChangeTimeZoned == null) {
             etaLabel.setText("Next order change in: --:--");
             return;
         }
-        LocalTime now = LocalTime.now();
-        long remainingSec = Duration.between(now, orderChangeTime).getSeconds();
+
+        ZonedDateTime now = ZonedDateTime.now();
+        long remainingSec = Duration.between(now, orderChangeTimeZoned).getSeconds();
+
         if (remainingSec > 0) {
             displayedIntervalMinutes = remainingSec / 60;
             intervalFields.get(0).setText(String.valueOf(displayedIntervalMinutes));
+
             long mins = remainingSec / 60;
             long secs = remainingSec % 60;
             String countdownStr = String.format("%d:%02d", mins, secs);
-            String changeAtStr = orderChangeTime.format(timeFormatter);
+            String changeAtStr = orderChangeTimeZoned.format(timeFormatter);
             etaLabel.setText(String.format(
                     "<html>Next order change in: %s <font color='#555555'>/ change at %s</font></html>",
                     countdownStr, changeAtStr));
         } else {
-            String changeTime = orderChangeTime.format(timeFormatter);
+            String changeTime = orderChangeTimeZoned.format(timeFormatter);
             lastChangeTimeText = "Order changed at: " + changeTime;
             lastChangeLabel.setText("<html><b><font color='blue'>" + lastChangeTimeText + "</font></b></html>");
-            etaLabel.setText("<html><b>Order changed at " + changeTime + "</b></html>");  // FIXED: removed "020"
+            etaLabel.setText("<html><b>Order changed at " + changeTime + "</b></html>");
+
             shiftIntervalsUp();
             updateCountdownTarget();
             if (countdownActive && !isPaused) startCountdown();
@@ -490,9 +496,11 @@ public class TimeCalculator extends JFrame {
             intervalFields.get(0).setText("");
             initialIntervalMinutes = displayedIntervalMinutes = 0;
             orderChangeTime = null;
+            orderChangeTimeZoned = null;
             calculateResult();
             return;
         }
+
         List<String> values = new ArrayList<>();
         for (JTextField f : intervalFields) values.add(f.getText().trim());
 
@@ -500,16 +508,19 @@ public class TimeCalculator extends JFrame {
         intervalFields.clear();
         intervalLabels.clear();
         intervalCount = 0;
+
         for (int i = 1; i < values.size(); i++) {
             intervalCount++;
             addIntervalRow(intervalCount);
             intervalFields.get(intervalFields.size() - 1).setText(values.get(i));
         }
+
         if (intervalCount == 0) {
             intervalCount = 1;
             addIntervalRow(1);
             intervalFields.get(0).setText("");
         }
+
         revalidateControlButtonsPosition();
         calculateResult();
     }
