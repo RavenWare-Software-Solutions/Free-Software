@@ -88,13 +88,22 @@ public class TimeCalculator extends JFrame {
         gbc.gridy = 3;
         topPanel.add(calcControlButton, gbc);
 
+        // === FIXED RESUME LOGIC ===
         calcControlButton.addActionListener(e -> {
-            if (!hasStarted) {
-                hasStarted = true;
-                startCountdownFromField();
-            } else if (countdownTimer.isRunning()) {
+            if (countdownTimer.isRunning()) {
+                // STOP
                 stopCountdown();
+            } else if (hasStarted && orderChangeTimeZoned != null && 
+                       orderChangeTimeZoned.isAfter(ZonedDateTime.now().minusSeconds(1))) {
+                // RESUME
+                countdownTimer.start();
+                countdownActive = true;
+                isPaused = false;
+                updateControlButtonState();
+                updateCountdown();
             } else {
+                // FRESH START
+                hasStarted = true;
                 startCountdownFromField();
             }
         });
@@ -165,6 +174,7 @@ public class TimeCalculator extends JFrame {
         });
 
         calculateResult();
+        updateControlButtonState();
     }
 
     private JButton createLinkButton(String text, String url) {
@@ -205,7 +215,7 @@ public class TimeCalculator extends JFrame {
 
         JLabel lbl = new JLabel("Interval " + idx + " (MM / HMM):");
         gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0;
-        intervalsPanel.add(lbl, gbc);  // FIXED: Removed "possibles" garbage
+        intervalsPanel.add(lbl, gbc);
         intervalLabels.add(lbl);
 
         JTextField field = new JTextField();
@@ -324,16 +334,15 @@ public class TimeCalculator extends JFrame {
         calculateResult();
         if (isPaused && !intervalFields.isEmpty()) {
             updateCountdownTargetFromField();
+            updateCountdown();
         }
     }
 
     private void startCountdownFromField() {
-        updateCountdownTargetFromField();
-        if (orderChangeTimeZoned == null) {
+        if (!updateCountdownTargetFromField()) {
             updateControlButtonState();
             return;
         }
-
         countdownTimer.start();
         countdownActive = true;
         isPaused = false;
@@ -348,31 +357,29 @@ public class TimeCalculator extends JFrame {
         updateControlButtonState();
     }
 
-    private void updateCountdownTargetFromField() {
+    private boolean updateCountdownTargetFromField() {
         if (intervalFields.isEmpty()) {
             orderChangeTimeZoned = null;
             etaLabel.setText("Next order change in: --:--");
-            return;
+            return false;
         }
-
         String txt = intervalFields.get(0).getText().trim();
         if (txt.isEmpty()) {
             orderChangeTimeZoned = null;
             etaLabel.setText("Next order change in: --:--");
-            return;
+            return false;
         }
-
         int mins;
         try {
             mins = parseMinutes(txt);
         } catch (NumberFormatException ex) {
             orderChangeTimeZoned = null;
             etaLabel.setText("Next order change in: --:--");
-            return;
+            return false;
         }
-
         orderChangeTimeZoned = ZonedDateTime.now().plusMinutes(mins);
         intervalFields.get(0).setText(String.valueOf(mins));
+        return true;
     }
 
     private void updateCountdown() {
@@ -380,15 +387,12 @@ public class TimeCalculator extends JFrame {
             etaLabel.setText("Next order change in: --:--");
             return;
         }
-
         ZonedDateTime now = ZonedDateTime.now();
         long remainingSec = Duration.between(now, orderChangeTimeZoned).getSeconds();
-
         if (remainingSec > 0) {
             long mins = remainingSec / 60;
             long secs = remainingSec % 60;
             intervalFields.get(0).setText(String.valueOf(mins));
-
             String countdownStr = String.format("%d:%02d", mins, secs);
             String changeAtStr = orderChangeTimeZoned.format(timeFormatter);
             etaLabel.setText(String.format(
@@ -399,9 +403,7 @@ public class TimeCalculator extends JFrame {
             lastChangeTimeText = "Order changed at: " + changeTime;
             lastChangeLabel.setText("<html><b><font color='blue'>" + lastChangeTimeText + "</font></b></html>");
             etaLabel.setText("<html><b>Order changed at " + changeTime + "</b></html>");
-
             shiftIntervalsUp();
-            updateCountdownTargetFromField();
             if (countdownActive && !isPaused) {
                 startCountdownFromField();
             }
@@ -425,7 +427,7 @@ public class TimeCalculator extends JFrame {
     }
 
     private void updateCurrentTime() {
-        ZonedDateTime now = ZonedDateTime.now();  // FIXED: Was now768() → invalid
+        ZonedDateTime now = ZonedDateTime.now();
         currentTimeLabel.setText("Current Time: " + now.format(timeFormatter) + " " + now.format(zoneFormatter));
     }
 
@@ -436,27 +438,22 @@ public class TimeCalculator extends JFrame {
             calculateResult();
             return;
         }
-
         List<String> values = new ArrayList<>();
         for (JTextField f : intervalFields) values.add(f.getText().trim());
-
         intervalsPanel.removeAll();
         intervalFields.clear();
         intervalLabels.clear();
         intervalCount = 0;
-
         for (int i = 1; i < values.size(); i++) {
             intervalCount++;
             addIntervalRow(intervalCount);
             intervalFields.get(intervalFields.size() - 1).setText(values.get(i));
         }
-
         if (intervalCount == 0) {
             intervalCount = 1;
             addIntervalRow(1);
             intervalFields.get(0).setText("");
         }
-
         revalidateControlButtonsPosition();
         calculateResult();
     }
@@ -527,7 +524,6 @@ public class TimeCalculator extends JFrame {
         } else {
             resultLabel.setText("Resulting Time: " + finalTime.format(timeFormatter) +
                     " (Added " + formatDuration(total) + ")");
-
             if (breach != -1) {
                 warningLabel.setText("<html><b>Warning:</b> exceeds " + cutoff +
                         " at Interval " + breach + " by " + formatDuration(excess) + "</html>");
@@ -535,7 +531,6 @@ public class TimeCalculator extends JFrame {
                 warningLabel.setText("");
             }
         }
-
         updateControlButtonState();
     }
 
@@ -563,4 +558,7 @@ public class TimeCalculator extends JFrame {
             new TimeCalculator().setVisible(true);
         });
     }
+
+//TODO
+// fix the "-" button causing gui bugs when field lines are removed incorrectly from bottom
 }
