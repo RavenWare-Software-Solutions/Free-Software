@@ -561,4 +561,7 @@ public class TimeCalculator extends JFrame {
 
 //TODO
 // fix the "-" button causing gui bugs when field lines are removed incorrectly from bottom
+// fix all times display at same time and change at same time.
+// fix next order change to display at proper calculated estimated time. currently shows "129:00" which isnt correect format
+
 }
