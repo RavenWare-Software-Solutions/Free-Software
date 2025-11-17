@@ -632,3 +632,20 @@ public class TimeCalculator extends JFrame {
         });
     }
 }
+
+//TODO:
+// 
+
+// 0. ensure user can update input fields while time is being calculated, "temporarily pause the countdown in field 1 if user is focused on it"
+// i want user to be able to update the fields input regardless f time is being counted actively or not.
+
+// add a reset all fields button - removes all fields but 1 and resets timer and fiel interval to 0. and paused.
+// ensure all timers update at the same instant.
+//
+//
+//
+//
+//
+//
+//
+//
